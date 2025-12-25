@@ -1,0 +1,19 @@
+# ClaudeShot Default Configuration
+# Copy this to .claudeshot.conf in your project root to customize defaults
+
+# Default capture mode: selection, window, full
+# MODE="selection"
+
+# Always resize screenshots (saves tokens)
+# RESIZE="1280"        # 1280px width (--small)
+# RESIZE="640"         # 640px width (--tiny)
+
+# Web screenshot defaults
+# WEB_WIDTH=1280
+# WEB_HEIGHT=800
+# WEB_FULL_PAGE=true
+
+# Other defaults
+# QUIET=false
+# CLIPBOARD=false
+# USE_TMP=false

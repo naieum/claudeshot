@@ -1,0 +1,9 @@
+{
+  "name": "claudeshot",
+  "version": "1.0.0",
+  "description": "Cross-platform screenshot capture for Claude Code. Capture full screen, windows, or regions and analyze them in your conversation.",
+  "author": {
+    "name": "Ian Muench"
+  },
+  "platforms": ["macos", "linux", "windows"]
+}
