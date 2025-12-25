@@ -10,6 +10,20 @@ I built this because I kept wanting Claude to see what I was looking at - error 
 - **Web screenshots** - point it at any URL and get a full-page capture
 - **Auto-resize** - shrink images to save tokens (a 217K screenshot becomes 11K)
 
+## Example output
+
+Desktop (1280px):
+
+![Desktop](examples/desktop.png)
+
+Mobile (390px):
+
+![Mobile](examples/mobile.png)
+
+Tablet (768px):
+
+![Tablet](examples/tablet.png)
+
 ## Install
 
 ```bash
