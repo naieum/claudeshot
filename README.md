@@ -26,12 +26,19 @@ Tablet (768px):
 
 ## Install
 
+From Claude Code:
+
+```
+/plugin marketplace add naieum/claudeshot
+/plugin install claudeshot@claudeshot-marketplace
+```
+
+Or manually:
+
 ```bash
 git clone https://github.com/naieum/claudeshot.git ~/.claude-plugins/claudeshot
 claude --plugin-dir ~/.claude-plugins/claudeshot
 ```
-
-Or add it permanently to your settings so it loads every session.
 
 ## Usage
 

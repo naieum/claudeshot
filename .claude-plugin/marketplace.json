@@ -1,0 +1,18 @@
+{
+  "name": "claudeshot-marketplace",
+  "owner": {
+    "name": "Ian Muench"
+  },
+  "description": "Screenshot plugin for Claude Code",
+  "plugins": [
+    {
+      "name": "claudeshot",
+      "source": ".",
+      "description": "Cross-platform screenshot capture. Screen, window, web pages, mobile/tablet viewports.",
+      "version": "1.0.0",
+      "author": {
+        "name": "Ian Muench"
+      }
+    }
+  ]
+}
