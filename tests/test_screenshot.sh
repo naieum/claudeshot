@@ -93,18 +93,6 @@ test_help_output() {
     output=$("$SCRIPT" --help 2>&1)
 
     # Check help contains key options
-    if echo "$output" | grep -q "\-\-browser"; then
-        pass "--help includes --browser flag"
-    else
-        fail "--help should include --browser flag"
-    fi
-
-    if echo "$output" | grep -q "chrome, firefox, edge, safari"; then
-        pass "--help lists all browser options"
-    else
-        fail "--help should list all browser options"
-    fi
-
     if echo "$output" | grep -q "\-\-web URL"; then
         pass "--help includes --web option"
     else
@@ -118,30 +106,6 @@ test_help_output() {
     fi
 }
 
-test_browser_flag_validation() {
-    section "Browser Flag Validation Tests"
-
-    # Valid browsers should not error on parsing (will error on not found, but different message)
-    # Use timeout to prevent hangs on browser startup
-    for browser in chrome firefox edge safari; do
-        local output
-        output=$(run_with_timeout 10 "$SCRIPT" --web https://example.com --browser "$browser" -t 2>&1 || true)
-        if echo "$output" | grep -q "Unknown browser"; then
-            fail "--browser $browser should be valid"
-        else
-            pass "--browser $browser is accepted as valid"
-        fi
-    done
-
-    # Invalid browser should error
-    local output
-    output=$("$SCRIPT" --web https://example.com --browser netscape -t 2>&1 || true)
-    if echo "$output" | grep -q "Unknown browser"; then
-        pass "--browser netscape correctly rejected"
-    else
-        fail "--browser netscape should be rejected" "Unknown browser error" "$output"
-    fi
-}
 
 test_viewport_flags() {
     section "Viewport Flag Tests"
@@ -151,22 +115,22 @@ test_viewport_flags() {
 
     local output
 
-    # These should parse without "Unknown option" errors
-    output=$("$SCRIPT" --web https://example.com --mobile -t 2>&1 || true)
+    # These should parse without "Unknown option" errors (use timeout for actual screenshot attempts)
+    output=$(run_with_timeout 20 "$SCRIPT" --web https://example.com --mobile -t 2>&1 || true)
     if echo "$output" | grep -q "Unknown option"; then
         fail "--mobile flag should be recognized"
     else
         pass "--mobile flag is recognized"
     fi
 
-    output=$("$SCRIPT" --web https://example.com --tablet -t 2>&1 || true)
+    output=$(run_with_timeout 20 "$SCRIPT" --web https://example.com --tablet -t 2>&1 || true)
     if echo "$output" | grep -q "Unknown option"; then
         fail "--tablet flag should be recognized"
     else
         pass "--tablet flag is recognized"
     fi
 
-    output=$("$SCRIPT" --web https://example.com --viewport 375x667 -t 2>&1 || true)
+    output=$(run_with_timeout 20 "$SCRIPT" --web https://example.com --viewport 375x667 -t 2>&1 || true)
     if echo "$output" | grep -q "Unknown option"; then
         fail "--viewport flag should be recognized"
     else
@@ -183,15 +147,16 @@ test_url_validation() {
 
     local output
 
-    # Valid URLs
-    output=$("$SCRIPT" --web https://example.com -t 2>&1 || true)
+    # Valid URLs (use timeout since these actually attempt screenshots)
+    output=$(run_with_timeout 15 "$SCRIPT" --web https://example.com -t 2>&1 || true)
     if echo "$output" | grep -q "URL must start with"; then
         fail "https://example.com should be valid"
     else
         pass "https://example.com is accepted"
     fi
 
-    output=$("$SCRIPT" --web http://localhost:3000 -t 2>&1 || true)
+    # localhost test - use short timeout since server likely not running
+    output=$(run_with_timeout 5 "$SCRIPT" --web http://localhost:3000 -t 2>&1 || true)
     if echo "$output" | grep -q "URL must start with"; then
         fail "http://localhost:3000 should be valid"
     else
@@ -301,65 +266,16 @@ test_path_validation() {
 test_browser_detection() {
     section "Browser Detection Tests"
 
-    # Test browser detection by checking if browsers respond to --help or are found
-    # We don't actually run screenshots here - that's tested separately
-
-    # Chrome
+    # Test Chrome detection (only browser supported for web screenshots)
     if command -v google-chrome &>/dev/null || \
        command -v chromium &>/dev/null || \
        [[ -d "/Applications/Google Chrome.app" ]]; then
         pass "Chrome/Chromium is available"
     else
-        pass "Chrome not installed (expected on some systems)"
-    fi
-
-    # Firefox
-    if command -v firefox &>/dev/null || \
-       [[ -d "/Applications/Firefox.app" ]]; then
-        pass "Firefox is available"
-    else
-        pass "Firefox not installed (expected on some systems)"
-    fi
-
-    # Edge
-    if command -v microsoft-edge &>/dev/null || \
-       command -v msedge &>/dev/null || \
-       [[ -d "/Applications/Microsoft Edge.app" ]]; then
-        pass "Edge is available"
-    else
-        pass "Edge not installed (expected on most systems)"
-    fi
-
-    # Safari (macOS only)
-    if [[ "$(uname)" == "Darwin" ]]; then
-        if [[ -d "/Applications/Safari.app" ]]; then
-            pass "Safari is available on macOS"
-        else
-            fail "Safari should be available on macOS"
-        fi
-    else
-        skip "Safari detection" "Not running on macOS"
+        pass "Chrome not installed (web screenshots will be unavailable)"
     fi
 }
 
-test_browser_error_messages() {
-    section "Browser Error Message Tests"
-
-    local output
-
-    # Edge not installed should show install instructions
-    output=$("$SCRIPT" --web https://example.com --browser edge -t 2>&1 || true)
-    if echo "$output" | grep -q "not installed"; then
-        if echo "$output" | grep -qi "install\|download\|brew"; then
-            pass "Edge error includes install instructions"
-        else
-            fail "Edge error should include install instructions"
-        fi
-    else
-        skip "Edge error message" "Edge is installed"
-    fi
-
-}
 
 # ============================================
 # WEB SCREENSHOT TESTS
@@ -379,7 +295,7 @@ test_web_screenshot_chrome() {
     local output_file="$TEST_DIR/chrome-test.png"
     local output
 
-    output=$(run_with_timeout 30 "$SCRIPT" --web https://example.com --browser chrome -o "$output_file" --tiny 2>&1 || true)
+    output=$(run_with_timeout 30 "$SCRIPT" --web https://example.com -o "$output_file" --tiny 2>&1 || true)
 
     if [[ -f "$output_file" ]]; then
         local size
@@ -471,13 +387,6 @@ test_jpeg_format() {
     fi
 }
 
-test_web_screenshot_firefox() {
-    section "Web Screenshot Tests (Firefox)"
-
-    # Firefox headless can be slow, skip in quick tests
-    # The Chrome test validates the core functionality
-    skip "Firefox web screenshot" "Skipped for speed (Firefox headless is slow)"
-}
 
 test_web_screenshot_resize() {
     section "Web Screenshot Resize Tests"
@@ -551,12 +460,10 @@ test_session_management() {
     mkdir -p "$TEST_DIR/.claudeshots"
     cd "$TEST_DIR"
 
-    # Create a test screenshot
+    # Create a test screenshot (requires Chrome)
     if command -v google-chrome &>/dev/null || \
        command -v chromium &>/dev/null || \
-       command -v firefox &>/dev/null || \
-       [[ -d "/Applications/Google Chrome.app" ]] || \
-       [[ -d "/Applications/Firefox.app" ]]; then
+       [[ -d "/Applications/Google Chrome.app" ]]; then
 
         run_with_timeout 30 "$SCRIPT" --web https://example.com --tiny 2>&1 || true
 
@@ -578,7 +485,7 @@ test_session_management() {
             pass "--clear-yes executed (list may still show files)"
         fi
     else
-        skip "Session management" "No browser installed"
+        skip "Session management" "Chrome not installed"
     fi
 }
 
@@ -636,17 +543,14 @@ main() {
 
     # Run test suites
     test_help_output
-    test_browser_flag_validation
     test_viewport_flags
     test_url_validation
     test_number_validation
     test_path_validation
     test_browser_detection
-    test_browser_error_messages
     test_web_screenshot_chrome
     test_fullpage_default
     test_jpeg_format
-    test_web_screenshot_firefox
     test_web_screenshot_resize
     test_viewport_presets
     test_dom_capture
