@@ -451,6 +451,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         -*)
             echo "Unknown option: $1" >&2
+            echo "Run with --help to see available options." >&2
             exit 1
             ;;
         *)
@@ -481,7 +482,8 @@ if [[ -z "$OUTPUT" ]]; then
             OUTPUT="$TEMP_DIR/claude-screenshot-$(date +%s).png"
             SESSION_LOG="$TEMP_DIR/claude-screenshot-session.log"
             if [[ "$QUIET" != true ]]; then
-                echo "Note: Could not create .claudeshots/, saving to $TEMP_DIR" >&2
+                echo "Note: Saving to $TEMP_DIR (couldn't create .claudeshots/ here)" >&2
+                echo "Tip: Run from a directory where you have write permission." >&2
             fi
         fi
     fi
@@ -549,7 +551,13 @@ capture_linux() {
 
     tool=$(find_linux_screenshot_tool)
     if [[ -z "$tool" ]]; then
-        echo "Error: No screenshot tool found. Please install one of: gnome-screenshot, scrot, maim, spectacle, grim" >&2
+        echo "Error: No screenshot tool found." >&2
+        echo "" >&2
+        echo "Install one of these:" >&2
+        echo "  Ubuntu/Debian: sudo apt install gnome-screenshot" >&2
+        echo "  Fedora: sudo dnf install gnome-screenshot" >&2
+        echo "  Arch: sudo pacman -S scrot" >&2
+        echo "  Wayland: sudo apt install grim slurp" >&2
         return 1
     fi
 
@@ -601,7 +609,8 @@ capture_linux() {
                     if command -v slurp &>/dev/null; then
                         grim -g "$(slurp)" "$output"
                     else
-                        echo "Error: grim requires slurp for selection mode. Install slurp." >&2
+                        echo "Error: grim needs slurp for region selection." >&2
+                        echo "Install with: sudo apt install slurp" >&2
                         return 1
                     fi
                     ;;
@@ -720,7 +729,8 @@ resize_image() {
                     magick "$input" -resize "${width}x" "$input"
                 fi
             else
-                echo "Warning: ImageMagick not found, skipping resize" >&2
+                echo "Warning: ImageMagick not found, skipping resize." >&2
+                echo "Install with: sudo apt install imagemagick" >&2
             fi
             ;;
         windows)
@@ -774,7 +784,27 @@ capture_web() {
     fi
 
     if [[ -z "$chrome_cmd" ]] || [[ ! -x "$chrome_cmd" && ! -f "$chrome_cmd" ]]; then
-        echo "Error: Chrome/Chromium not found. Please install Google Chrome or Chromium." >&2
+        echo "Error: Chrome or Chromium is required for web screenshots." >&2
+        echo "" >&2
+        case "$OS" in
+            macos)
+                echo "Install with: brew install --cask google-chrome" >&2
+                echo "Or download from: https://www.google.com/chrome/" >&2
+                ;;
+            linux)
+                echo "Install with:" >&2
+                echo "  Ubuntu/Debian: sudo apt install chromium-browser" >&2
+                echo "  Fedora: sudo dnf install chromium" >&2
+                echo "  Arch: sudo pacman -S chromium" >&2
+                ;;
+            wsl)
+                echo "Install Chrome on Windows, then it will be detected automatically." >&2
+                echo "Download from: https://www.google.com/chrome/" >&2
+                ;;
+            *)
+                echo "Download from: https://www.google.com/chrome/" >&2
+                ;;
+        esac
         return 1
     fi
 
@@ -878,7 +908,21 @@ if [[ -f "$OUTPUT" ]]; then
     exit 0
 else
     if [[ "$QUIET" != true ]]; then
-        echo "Screenshot cancelled or failed" >&2
+        echo "Screenshot was not saved." >&2
+        echo "" >&2
+        if [[ -n "$WEB_URL" ]]; then
+            echo "Tips for web screenshots:" >&2
+            echo "  - Make sure the URL is accessible" >&2
+            echo "  - Check if Chrome is installed (--web requires Chrome)" >&2
+            echo "  - Try a simpler URL first: --web https://example.com" >&2
+        else
+            echo "This usually means:" >&2
+            echo "  - You pressed Escape to cancel" >&2
+            echo "  - The capture window was closed" >&2
+            echo "  - There was a permission issue" >&2
+            echo "" >&2
+            echo "Try again with: /screenshot" >&2
+        fi
     fi
     exit 1
 fi
