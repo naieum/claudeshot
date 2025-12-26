@@ -83,6 +83,66 @@ validate_url() {
     fi
 }
 
+# Security: check directory is safe (not a symlink to somewhere else)
+check_safe_directory() {
+    local dir="$1"
+    if [[ -L "$dir" ]]; then
+        echo "Error: $dir is a symlink. Refusing to use for safety." >&2
+        exit 1
+    fi
+}
+
+# Security: check file is safe to delete (is a real file, not a symlink, and is a PNG)
+safe_to_delete() {
+    local file="$1"
+    # Must exist
+    [[ -e "$file" ]] || return 1
+    # Must not be a symlink
+    [[ -L "$file" ]] && return 1
+    # Must be a regular file
+    [[ -f "$file" ]] || return 1
+    # Must end in .png
+    [[ "$file" == *.png ]] || return 1
+    # Must be in allowed locations
+    case "$file" in
+        .claudeshots/*.png) return 0 ;;
+        /tmp/claude-screenshot-*.png) return 0 ;;
+        "$TEMP_DIR"/claude-screenshot-*.png) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Security: check output path is safe
+validate_output_path() {
+    local path="$1"
+    # Block writing to sensitive locations
+    case "$path" in
+        /etc/*|/usr/*|/bin/*|/sbin/*|/var/*|/System/*|/Library/*)
+            echo "Error: Cannot write to system directory: $path" >&2
+            exit 1
+            ;;
+        ~/.*|/home/*/.*|/Users/*/.*)
+            # Hidden files in home - block dotfiles but allow .claudeshots
+            if [[ "$path" != */.claudeshots/* ]]; then
+                echo "Error: Cannot overwrite dotfiles: $path" >&2
+                exit 1
+            fi
+            ;;
+    esac
+    # Warn if overwriting existing file outside our directories
+    if [[ -e "$path" ]]; then
+        case "$path" in
+            .claudeshots/*|/tmp/claude-screenshot-*|"$TEMP_DIR"/claude-screenshot-*)
+                # Our directories, OK to overwrite
+                ;;
+            *)
+                echo "Error: File already exists: $path (use .claudeshots/ or /tmp)" >&2
+                exit 1
+                ;;
+        esac
+    fi
+}
+
 # Detect OS
 detect_os() {
     case "$(uname -s)" in
@@ -212,6 +272,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         -o|--output)
             validate_path "$2"
+            validate_output_path "$2"
             OUTPUT="$2"
             shift 2
             ;;
@@ -327,13 +388,11 @@ while [[ $# -gt 0 ]]; do
                 echo "No session screenshots to clear"
                 exit 0
             fi
-            # Safety: only process files matching our screenshot patterns
+            # Safety: only process files that pass all safety checks
             SAFE_FILES=()
             while IFS= read -r f; do
-                if [[ -f "$f" ]]; then
-                    if [[ "$f" == .claudeshots/*.png ]] || [[ "$f" == "$TEMP_DIR"/claude-screenshot-*.png ]] || [[ "$f" == /tmp/claude-screenshot-*.png ]]; then
-                        SAFE_FILES+=("$f")
-                    fi
+                if safe_to_delete "$f"; then
+                    SAFE_FILES+=("$f")
                 fi
             done < "$SESSION_LOG"
 
@@ -352,7 +411,10 @@ while [[ $# -gt 0 ]]; do
             echo
             if [[ $REPLY =~ ^[Yy]$ ]]; then
                 for f in "${SAFE_FILES[@]}"; do
-                    rm "$f"
+                    # Double-check before each delete
+                    if safe_to_delete "$f"; then
+                        rm "$f"
+                    fi
                 done
                 rm -f "$SESSION_LOG"
                 echo "Cleared ${#SAFE_FILES[@]} session screenshots"
@@ -368,11 +430,9 @@ while [[ $# -gt 0 ]]; do
             fi
             COUNT=0
             while IFS= read -r f; do
-                if [[ -f "$f" ]]; then
-                    if [[ "$f" == .claudeshots/*.png ]] || [[ "$f" == "$TEMP_DIR"/claude-screenshot-*.png ]] || [[ "$f" == /tmp/claude-screenshot-*.png ]]; then
-                        rm "$f"
-                        ((COUNT++))
-                    fi
+                if safe_to_delete "$f"; then
+                    rm "$f"
+                    ((COUNT++))
                 fi
             done < "$SESSION_LOG"
             rm -f "$SESSION_LOG"
@@ -406,8 +466,15 @@ if [[ -z "$OUTPUT" ]]; then
         OUTPUT="$TEMP_DIR/claude-screenshot-$(date +%s).png"
         SESSION_LOG="$TEMP_DIR/claude-screenshot-session.log"
     else
-        mkdir -p "$SCREENSHOT_DIR" 2>/dev/null
-        if [[ -d "$SCREENSHOT_DIR" ]]; then
+        # Security: check if .claudeshots is a symlink
+        if [[ -L "$SCREENSHOT_DIR" ]]; then
+            echo "Error: $SCREENSHOT_DIR is a symlink. Refusing to use for safety." >&2
+            OUTPUT="$TEMP_DIR/claude-screenshot-$(date +%s).png"
+            SESSION_LOG="$TEMP_DIR/claude-screenshot-session.log"
+        else
+            mkdir -p "$SCREENSHOT_DIR" 2>/dev/null
+        fi
+        if [[ -d "$SCREENSHOT_DIR" ]] && [[ ! -L "$SCREENSHOT_DIR" ]]; then
             OUTPUT="${SCREENSHOT_DIR}/screenshot-$(date +%Y%m%d-%H%M%S).png"
             SESSION_LOG="${SCREENSHOT_DIR}/.session.log"
         else
@@ -766,8 +833,11 @@ if [[ -f "$OUTPUT" ]]; then
         resize_image "$OUTPUT" "$RESIZE"
     fi
 
-    # Log to session file for later cleanup
+    # Log to session file for later cleanup (limit to 1000 entries)
     echo "$OUTPUT" >> "$SESSION_LOG"
+    if [[ -f "$SESSION_LOG" ]] && [[ $(wc -l < "$SESSION_LOG") -gt 1000 ]]; then
+        tail -500 "$SESSION_LOG" > "$SESSION_LOG.tmp" && mv "$SESSION_LOG.tmp" "$SESSION_LOG"
+    fi
 
     # Copy to clipboard if requested
     if [[ "$CLIPBOARD" == true ]]; then
