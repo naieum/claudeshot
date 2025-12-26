@@ -12,6 +12,24 @@ I built this because I kept wanting Claude to see what I was looking at - error 
 - **Auto-resize** - shrink images to save tokens (a 217K screenshot becomes 11K)
 - **JPEG support** - `--jpeg` for even smaller files
 
+## Realistic expectations
+
+Screenshots give Claude a **starting point**, not a magic replication button.
+
+When you screenshot stripe.com and say "build something like this," Claude will:
+- Get the general layout and vibe
+- Pick up color schemes and spacing patterns
+- Use it as inspiration for structure
+
+Claude won't:
+- Produce a pixel-perfect clone
+- Replicate complex animations or interactions
+- Match every font, shadow, and gradient exactly
+
+Think of it like showing a designer a reference site - you'll get something *inspired by* it, not a copy. The screenshot helps Claude understand what you're going for, then you iterate from there.
+
+For better results: use `--dom` to capture HTML alongside the screenshot. This gives Claude both the visual and the structure to work with.
+
 ## Why ClaudeShot over Playwright?
 
 If you have Playwright MCP installed, you might wonder why use this instead. The short answer: **dramatically fewer tokens**.
