@@ -3,6 +3,7 @@
 # Usage: screenshot [OPTIONS] [PROMPT]
 #
 # Supports: macOS, Linux (X11/Wayland), Windows (via Git Bash/WSL)
+# Web screenshots require: Chrome + Python 3
 #
 # Options:
 #   -m, --mode MODE       Capture mode: selection (default), window, full
@@ -26,8 +27,6 @@
 #   --tablet              Tablet viewport (768x1024 - iPad)
 #   --viewport WxH        Custom viewport (e.g., 375x667)
 #   --fullpage            Capture full scrollable page (default for --web)
-#   --web-timeout SECS    Max seconds to wait for page load (default: 15, 0=no limit)
-#   --browser BROWSER     Use specific browser: chrome, firefox, edge, safari
 #   --dom                 Capture page HTML/DOM alongside screenshot (web only)
 #   --clear               Clear all screenshots from current session (with confirmation)
 #   --clear-yes           Clear all session screenshots without confirmation
@@ -205,8 +204,6 @@ WEB_URL=""
 WEB_WIDTH=1280
 WEB_HEIGHT=800
 WEB_FULL_PAGE=true
-WEB_TIMEOUT=15  # Max seconds to wait for page load (0 = no timeout)
-BROWSER_PREF=""  # User's browser preference: chrome, firefox, edge, safari
 CAPTURE_DOM=false  # Capture page HTML alongside screenshot
 FORMAT="png"  # Output format: png or jpeg
 
@@ -223,7 +220,7 @@ if [[ -f "$CONFIG_FILE" ]]; then
         value="${value#\'}"
         # Only allow known config keys
         case "$key" in
-            MODE|RESIZE|WEB_WIDTH|WEB_HEIGHT|WEB_FULL_PAGE|WEB_TIMEOUT|QUIET|CLIPBOARD|USE_TMP)
+            MODE|RESIZE|WEB_WIDTH|WEB_HEIGHT|WEB_FULL_PAGE|QUIET|CLIPBOARD|USE_TMP)
                 declare "$key=$value"
                 ;;
         esac
@@ -362,11 +359,6 @@ while [[ $# -gt 0 ]]; do
             WEB_FULL_PAGE=true
             shift
             ;;
-        --web-timeout)
-            validate_number "$2"
-            WEB_TIMEOUT="$2"
-            shift 2
-            ;;
         --dom)
             CAPTURE_DOM=true
             shift
@@ -374,18 +366,6 @@ while [[ $# -gt 0 ]]; do
         --jpeg)
             FORMAT="jpeg"
             shift
-            ;;
-        --browser)
-            case "$2" in
-                chrome|firefox|edge|safari)
-                    BROWSER_PREF="$2"
-                    ;;
-                *)
-                    echo "Error: Unknown browser '$2'. Use: chrome, firefox, edge, or safari" >&2
-                    exit 1
-                    ;;
-            esac
-            shift 2
             ;;
         --open)
             if [[ -d "$SCREENSHOT_DIR" ]]; then
@@ -751,45 +731,6 @@ capture_windows() {
     esac
 }
 
-# Run command with timeout (cross-platform)
-# Usage: run_with_timeout SECONDS command [args...]
-# Returns: command exit code, or 124 if timed out
-run_with_timeout() {
-    local timeout_secs="$1"
-    shift
-
-    # No timeout requested
-    if [[ "$timeout_secs" -eq 0 ]]; then
-        "$@"
-        return $?
-    fi
-
-    # Try native timeout command first (Linux, and macOS with coreutils)
-    if command -v timeout &>/dev/null; then
-        timeout "$timeout_secs" "$@"
-        return $?
-    fi
-
-    # macOS fallback: use background process
-    "$@" &
-    local pid=$!
-
-    # Wait for completion or timeout
-    local count=0
-    while kill -0 "$pid" 2>/dev/null; do
-        sleep 1
-        ((count++))
-        if [[ "$count" -ge "$timeout_secs" ]]; then
-            kill "$pid" 2>/dev/null
-            wait "$pid" 2>/dev/null
-            return 124  # Same exit code as GNU timeout
-        fi
-    done
-
-    wait "$pid"
-    return $?
-}
-
 # Resize image function
 resize_image() {
     local input="$1"
@@ -881,52 +822,6 @@ find_chrome() {
     return 1
 }
 
-find_firefox() {
-    local cmd=""
-    if command -v firefox &>/dev/null; then
-        cmd="firefox"
-    elif [[ "$OS" == "macos" ]] && [[ -d "/Applications/Firefox.app" ]]; then
-        cmd="/Applications/Firefox.app/Contents/MacOS/firefox"
-    elif [[ "$OS" == "wsl" ]]; then
-        if [[ -f "/mnt/c/Program Files/Mozilla Firefox/firefox.exe" ]]; then
-            cmd="/mnt/c/Program Files/Mozilla Firefox/firefox.exe"
-        elif [[ -f "/mnt/c/Program Files (x86)/Mozilla Firefox/firefox.exe" ]]; then
-            cmd="/mnt/c/Program Files (x86)/Mozilla Firefox/firefox.exe"
-        fi
-    fi
-    if [[ -n "$cmd" ]] && [[ -x "$cmd" || -f "$cmd" ]]; then
-        echo "$cmd"
-        return 0
-    fi
-    return 1
-}
-
-find_edge() {
-    local cmd=""
-    if command -v microsoft-edge &>/dev/null; then
-        cmd="microsoft-edge"
-    elif command -v msedge &>/dev/null; then
-        cmd="msedge"
-    elif [[ "$OS" == "macos" ]] && [[ -d "/Applications/Microsoft Edge.app" ]]; then
-        cmd="/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
-    elif [[ "$OS" == "wsl" ]]; then
-        if [[ -f "/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" ]]; then
-            cmd="/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
-        elif [[ -f "/mnt/c/Program Files/Microsoft/Edge/Application/msedge.exe" ]]; then
-            cmd="/mnt/c/Program Files/Microsoft/Edge/Application/msedge.exe"
-        fi
-    fi
-    if [[ -n "$cmd" ]] && [[ -x "$cmd" || -f "$cmd" ]]; then
-        echo "$cmd"
-        return 0
-    fi
-    return 1
-}
-
-# Safari is macOS only and requires AppleScript approach
-safari_available() {
-    [[ "$OS" == "macos" ]] && [[ -d "/Applications/Safari.app" ]]
-}
 
 # Capture page DOM/HTML alongside screenshot
 capture_dom() {
@@ -934,17 +829,17 @@ capture_dom() {
     local output="$2"
 
     local browser_cmd
-    browser_cmd=$(find_chrome 2>/dev/null) || browser_cmd=$(find_edge 2>/dev/null) || true
+    browser_cmd=$(find_chrome 2>/dev/null) || true
 
     if [[ -n "$browser_cmd" ]]; then
-        # Chrome/Edge support --dump-dom for JS-rendered HTML
+        # Chrome supports --dump-dom for JS-rendered HTML
         "$browser_cmd" --headless --disable-gpu --dump-dom "$url" 2>/dev/null > "$output"
     else
         # Fallback: raw HTML via curl (won't have JS-rendered content)
         if command -v curl &>/dev/null; then
             curl -sL "$url" > "$output" 2>/dev/null
         else
-            echo "Warning: Could not capture DOM (no Chrome/Edge or curl available)" >&2
+            echo "Warning: Could not capture DOM (no Chrome or curl available)" >&2
             return 1
         fi
     fi
@@ -1007,92 +902,8 @@ capture_chromium() {
     "$browser_cmd" "${args[@]}" "$url" 2>/dev/null
 }
 
-# Capture web page with Firefox
-capture_firefox() {
-    local browser_cmd="$1"
-    local url="$2"
-    local output="$3"
-    local width="$4"
-    local height="$5"
-    local full_page="$6"
-    local timeout_secs="${7:-0}"
 
-    # Firefox uses different flags:
-    # --screenshot FILE (space, not =)
-    # --window-size W = full page (Firefox auto-calculates height)
-    # --window-size W,H = viewport only
-    local exit_code
-    if [[ "$full_page" == true ]]; then
-        # Width only = Firefox captures full scrollable page
-        run_with_timeout "$timeout_secs" "$browser_cmd" --headless --screenshot "$output" --window-size "${width}" "$url" 2>/dev/null
-        exit_code=$?
-    else
-        run_with_timeout "$timeout_secs" "$browser_cmd" --headless --screenshot "$output" --window-size "${width},${height}" "$url" 2>/dev/null
-        exit_code=$?
-    fi
-
-    # Check if we timed out but still got a screenshot
-    if [[ "$exit_code" -eq 124 ]]; then
-        if [[ -f "$output" ]] && [[ -s "$output" ]]; then
-            [[ "$QUIET" != true ]] && echo "Page load timed out after ${timeout_secs}s, using partial capture" >&2
-            return 0
-        fi
-        [[ "$QUIET" != true ]] && echo "Page load timed out after ${timeout_secs}s" >&2
-        return 1
-    fi
-
-    return $exit_code
-}
-
-# Capture web page with Safari (macOS only, opens visible window)
-capture_safari() {
-    local url="$1"
-    local output="$2"
-    local width="$3"
-    local height="$4"
-    local full_page="$5"
-
-    if [[ "$full_page" == true ]]; then
-        echo "Warning: Safari does not support full-page capture. Using viewport only." >&2
-        echo "Tip: Use --browser chrome or --browser firefox for full-page screenshots." >&2
-    fi
-
-    if [[ "$QUIET" != true ]]; then
-        echo "Opening Safari (will be visible briefly)..." >&2
-    fi
-
-    # Open Safari, load URL, wait for page, take screenshot
-    osascript <<EOF 2>/dev/null
-tell application "Safari"
-    activate
-    make new document with properties {URL:"$url"}
-    delay 3
-end tell
-tell application "System Events"
-    tell process "Safari"
-        set frontmost to true
-        delay 0.5
-    end tell
-end tell
-EOF
-
-    # Get Safari window ID and screenshot it
-    local window_id
-    window_id=$(osascript -e 'tell app "Safari" to id of window 1' 2>/dev/null)
-    if [[ -n "$window_id" ]]; then
-        screencapture -l"$window_id" "$output" 2>/dev/null
-    else
-        # Fallback: screenshot front window
-        screencapture -w "$output" 2>/dev/null
-    fi
-
-    # Close the Safari tab we opened
-    osascript -e 'tell application "Safari" to close current tab of front window' 2>/dev/null || true
-
-    [[ -f "$output" ]]
-}
-
-# Web screenshot function - multi-browser support
+# Web screenshot function - Chrome only (via CDP for full-page support)
 capture_web() {
     local url="$1"
     local output="$2"
@@ -1100,203 +911,43 @@ capture_web() {
     local height="$4"
     local full_page="$5"
 
-    local browser_cmd=""
-    local browser_type=""
+    local browser_cmd
+    browser_cmd=$(find_chrome 2>/dev/null) || true
 
-    # If user specified a browser preference, try that first
-    if [[ -n "$BROWSER_PREF" ]]; then
-        case "$BROWSER_PREF" in
-            chrome)
-                browser_cmd=$(find_chrome) || true
-                browser_type="chrome"
-                ;;
-            firefox)
-                browser_cmd=$(find_firefox) || true
-                browser_type="firefox"
-                ;;
-            edge)
-                browser_cmd=$(find_edge) || true
-                browser_type="edge"
-                ;;
-            safari)
-                if safari_available; then
-                    browser_type="safari"
-                fi
-                ;;
-        esac
-        if [[ -z "$browser_cmd" && "$browser_type" != "safari" ]] || [[ "$browser_type" == "safari" && ! safari_available ]]; then
-            echo "Error: Requested browser '$BROWSER_PREF' is not installed." >&2
-            echo "" >&2
-            show_browser_install_help "$BROWSER_PREF"
-            return 1
-        fi
-    else
-        # Auto-detect browser
-        # For full-page: prefer Firefox (native support) > Chrome (CDP) > Edge > Safari
-        # For viewport: Chrome > Firefox > Edge > Safari
-        if [[ "$full_page" == true ]]; then
-            # Firefox has native full-page support (no CDP needed)
-            if browser_cmd=$(find_firefox 2>/dev/null); then
-                browser_type="firefox"
-            elif browser_cmd=$(find_chrome 2>/dev/null); then
-                browser_type="chrome"
-            elif browser_cmd=$(find_edge 2>/dev/null); then
-                browser_type="edge"
-            elif safari_available; then
-                browser_type="safari"
-            fi
-        else
-            # Viewport only: Chrome > Firefox > Edge > Safari
-            if browser_cmd=$(find_chrome 2>/dev/null); then
-                browser_type="chrome"
-            elif browser_cmd=$(find_firefox 2>/dev/null); then
-                browser_type="firefox"
-            elif browser_cmd=$(find_edge 2>/dev/null); then
-                browser_type="edge"
-            elif safari_available; then
-                browser_type="safari"
-            fi
-        fi
-    fi
-
-    if [[ -z "$browser_type" ]]; then
-        echo "Error: No supported browser found for web screenshots." >&2
+    if [[ -z "$browser_cmd" ]]; then
+        echo "Error: Chrome is required for web screenshots." >&2
         echo "" >&2
-        show_all_browser_install_help
+        show_chrome_install_help
         return 1
     fi
 
     if [[ "$QUIET" != true ]]; then
-        echo "Capturing web page with $browser_type: $url" >&2
+        echo "Capturing web page: $url" >&2
     fi
 
-    case "$browser_type" in
-        chrome|edge)
-            capture_chromium "$browser_cmd" "$url" "$output" "$width" "$height" "$full_page"
-            ;;
-        firefox)
-            capture_firefox "$browser_cmd" "$url" "$output" "$width" "$height" "$full_page" "$WEB_TIMEOUT"
-            # Fallback to Chrome if Firefox fails (e.g., quarantine issues on macOS)
-            if [[ ! -f "$output" ]] || [[ ! -s "$output" ]]; then
-                local chrome_cmd
-                chrome_cmd=$(find_chrome)
-                if [[ -n "$chrome_cmd" ]]; then
-                    [[ "$QUIET" != true ]] && echo "Firefox failed, trying Chrome..." >&2
-                    capture_chromium "$chrome_cmd" "$url" "$output" "$width" "$height" "$full_page"
-                fi
-            fi
-            ;;
-        safari)
-            capture_safari "$url" "$output" "$width" "$height" "$full_page"
-            ;;
-    esac
+    capture_chromium "$browser_cmd" "$url" "$output" "$width" "$height" "$full_page"
 }
 
-# Show install help for a specific browser
-show_browser_install_help() {
-    local browser="$1"
-    case "$browser" in
-        chrome)
-            case "$OS" in
-                macos)
-                    echo "Install Chrome with: brew install --cask google-chrome" >&2
-                    echo "Or download from: https://www.google.com/chrome/" >&2
-                    ;;
-                linux)
-                    echo "Install Chrome with:" >&2
-                    echo "  Ubuntu/Debian: sudo apt install chromium-browser" >&2
-                    echo "  Fedora: sudo dnf install chromium" >&2
-                    echo "  Arch: sudo pacman -S chromium" >&2
-                    ;;
-                wsl)
-                    echo "Install Chrome on Windows from: https://www.google.com/chrome/" >&2
-                    ;;
-                *)
-                    echo "Download Chrome from: https://www.google.com/chrome/" >&2
-                    ;;
-            esac
-            ;;
-        firefox)
-            case "$OS" in
-                macos)
-                    echo "Install Firefox with: brew install --cask firefox" >&2
-                    echo "Or download from: https://www.mozilla.org/firefox/" >&2
-                    ;;
-                linux)
-                    echo "Install Firefox with:" >&2
-                    echo "  Ubuntu/Debian: sudo apt install firefox" >&2
-                    echo "  Fedora: sudo dnf install firefox" >&2
-                    echo "  Arch: sudo pacman -S firefox" >&2
-                    ;;
-                wsl)
-                    echo "Install Firefox on Windows from: https://www.mozilla.org/firefox/" >&2
-                    ;;
-                *)
-                    echo "Download Firefox from: https://www.mozilla.org/firefox/" >&2
-                    ;;
-            esac
-            ;;
-        edge)
-            case "$OS" in
-                macos)
-                    echo "Install Edge with: brew install --cask microsoft-edge" >&2
-                    echo "Or download from: https://www.microsoft.com/edge" >&2
-                    ;;
-                linux)
-                    echo "Install Edge from: https://www.microsoft.com/edge" >&2
-                    ;;
-                wsl)
-                    echo "Edge should be pre-installed on Windows 10/11." >&2
-                    echo "Or download from: https://www.microsoft.com/edge" >&2
-                    ;;
-                *)
-                    echo "Download Edge from: https://www.microsoft.com/edge" >&2
-                    ;;
-            esac
-            ;;
-        safari)
-            if [[ "$OS" != "macos" ]]; then
-                echo "Safari is only available on macOS." >&2
-            else
-                echo "Safari should be pre-installed on macOS." >&2
-                echo "If missing, reinstall macOS or use a different browser." >&2
-            fi
-            ;;
-    esac
-}
-
-# Show install help for all browsers
-show_all_browser_install_help() {
-    echo "Supported browsers for web screenshots:" >&2
+# Show Chrome install help
+show_chrome_install_help() {
+    echo "Web screenshots require Chrome and Python 3." >&2
     echo "" >&2
     case "$OS" in
         macos)
-            echo "  Chrome:  brew install --cask google-chrome" >&2
-            echo "  Firefox: brew install --cask firefox" >&2
-            echo "  Edge:    brew install --cask microsoft-edge" >&2
-            echo "  Safari:  (pre-installed on macOS)" >&2
+            echo "Install Chrome: brew install --cask google-chrome" >&2
+            echo "Or download from: https://www.google.com/chrome/" >&2
             ;;
         linux)
-            echo "  Chrome/Chromium:" >&2
-            echo "    Ubuntu/Debian: sudo apt install chromium-browser" >&2
-            echo "    Fedora: sudo dnf install chromium" >&2
-            echo "    Arch: sudo pacman -S chromium" >&2
-            echo "" >&2
-            echo "  Firefox:" >&2
-            echo "    Ubuntu/Debian: sudo apt install firefox" >&2
-            echo "    Fedora: sudo dnf install firefox" >&2
-            echo "    Arch: sudo pacman -S firefox" >&2
+            echo "Install Chrome/Chromium:" >&2
+            echo "  Ubuntu/Debian: sudo apt install chromium-browser" >&2
+            echo "  Fedora: sudo dnf install chromium" >&2
+            echo "  Arch: sudo pacman -S chromium" >&2
             ;;
         wsl)
-            echo "  Install on Windows:" >&2
-            echo "    Chrome:  https://www.google.com/chrome/" >&2
-            echo "    Firefox: https://www.mozilla.org/firefox/" >&2
-            echo "    Edge:    (pre-installed on Windows 10/11)" >&2
+            echo "Install Chrome on Windows: https://www.google.com/chrome/" >&2
             ;;
         *)
-            echo "  Chrome:  https://www.google.com/chrome/" >&2
-            echo "  Firefox: https://www.mozilla.org/firefox/" >&2
-            echo "  Edge:    https://www.microsoft.com/edge" >&2
+            echo "Download Chrome: https://www.google.com/chrome/" >&2
             ;;
     esac
 }

@@ -79,13 +79,12 @@ The `--tiny` flag cuts file size by about 95%. Still readable, way fewer tokens.
 --tiny            resize to 640px width
 --resize WxH      custom size (e.g. --resize 800x600)
 --jpeg            save as JPEG instead of PNG (smaller files)
---web URL         screenshot a webpage
+--web URL         screenshot a webpage (requires Chrome + Python)
 --mobile          mobile viewport (390x844)
 --tablet          tablet viewport (768x1024)
 --viewport WxH    custom viewport (e.g., 375x667)
 --fullpage        capture full scrollable page (default)
 --web-viewport    just the visible viewport
---browser NAME    use specific browser (chrome, firefox, edge, safari)
 --dom             capture page HTML alongside screenshot (web only)
 -d, --delay N     wait N seconds before capture
 -c, --clipboard   copy to clipboard too
@@ -104,28 +103,16 @@ Management:
 
 Works on macOS, Linux, and Windows.
 
+**Screen capture:**
 - macOS uses the built-in `screencapture`
 - Linux uses whatever you have installed (gnome-screenshot, scrot, maim, etc.)
 - Windows uses PowerShell or Snipping Tool
 
-Web screenshots support multiple browsers:
-- **Firefox** (preferred for full-page - native support, no dependencies)
-- Chrome/Chromium (full-page via CDP, requires Python)
-- Edge (same as Chrome, Chromium-based)
-- Safari (macOS only, viewport only - see note below)
+**Web screenshots require:**
+- Chrome (or Chromium)
+- Python 3
 
-**How full-page works:**
-- Firefox: Native CLI support (just pass width, auto-calculates height)
-- Chrome/Edge: Uses Chrome DevTools Protocol via our stdlib-only Python script
-- Safari: No headless support, viewport capture only
-
-**Safari note:** Apple never added headless screenshot support to Safari. We work around this with AppleScript, but it opens a visible Safari window briefly and can only capture the viewport.
-
-Auto-detects browsers. For full-page, prefers Firefox > Chrome > Edge:
-```
-/screenshot --web https://example.com              # auto-detect
-/screenshot --web https://example.com --browser firefox  # force Firefox
-```
+Uses Chrome DevTools Protocol via a stdlib-only Python script - no npm, no Playwright, no external dependencies.
 
 ## Configuration
 
