@@ -26,6 +26,7 @@
 #   --tablet              Tablet viewport (768x1024 - iPad)
 #   --viewport WxH        Custom viewport (e.g., 375x667)
 #   --fullpage            Capture full scrollable page (default for --web)
+#   --web-timeout SECS    Max seconds to wait for page load (default: 15, 0=no limit)
 #   --browser BROWSER     Use specific browser: chrome, firefox, edge, safari
 #   --dom                 Capture page HTML/DOM alongside screenshot (web only)
 #   --clear               Clear all screenshots from current session (with confirmation)
@@ -204,6 +205,7 @@ WEB_URL=""
 WEB_WIDTH=1280
 WEB_HEIGHT=800
 WEB_FULL_PAGE=true
+WEB_TIMEOUT=15  # Max seconds to wait for page load (0 = no timeout)
 BROWSER_PREF=""  # User's browser preference: chrome, firefox, edge, safari
 CAPTURE_DOM=false  # Capture page HTML alongside screenshot
 FORMAT="png"  # Output format: png or jpeg
@@ -221,7 +223,7 @@ if [[ -f "$CONFIG_FILE" ]]; then
         value="${value#\'}"
         # Only allow known config keys
         case "$key" in
-            MODE|RESIZE|WEB_WIDTH|WEB_HEIGHT|WEB_FULL_PAGE|QUIET|CLIPBOARD|USE_TMP)
+            MODE|RESIZE|WEB_WIDTH|WEB_HEIGHT|WEB_FULL_PAGE|WEB_TIMEOUT|QUIET|CLIPBOARD|USE_TMP)
                 declare "$key=$value"
                 ;;
         esac
@@ -359,6 +361,11 @@ while [[ $# -gt 0 ]]; do
         --fullpage)
             WEB_FULL_PAGE=true
             shift
+            ;;
+        --web-timeout)
+            validate_number "$2"
+            WEB_TIMEOUT="$2"
+            shift 2
             ;;
         --dom)
             CAPTURE_DOM=true
@@ -744,6 +751,45 @@ capture_windows() {
     esac
 }
 
+# Run command with timeout (cross-platform)
+# Usage: run_with_timeout SECONDS command [args...]
+# Returns: command exit code, or 124 if timed out
+run_with_timeout() {
+    local timeout_secs="$1"
+    shift
+
+    # No timeout requested
+    if [[ "$timeout_secs" -eq 0 ]]; then
+        "$@"
+        return $?
+    fi
+
+    # Try native timeout command first (Linux, and macOS with coreutils)
+    if command -v timeout &>/dev/null; then
+        timeout "$timeout_secs" "$@"
+        return $?
+    fi
+
+    # macOS fallback: use background process
+    "$@" &
+    local pid=$!
+
+    # Wait for completion or timeout
+    local count=0
+    while kill -0 "$pid" 2>/dev/null; do
+        sleep 1
+        ((count++))
+        if [[ "$count" -ge "$timeout_secs" ]]; then
+            kill "$pid" 2>/dev/null
+            wait "$pid" 2>/dev/null
+            return 124  # Same exit code as GNU timeout
+        fi
+    done
+
+    wait "$pid"
+    return $?
+}
+
 # Resize image function
 resize_image() {
     local input="$1"
@@ -969,17 +1015,33 @@ capture_firefox() {
     local width="$4"
     local height="$5"
     local full_page="$6"
+    local timeout_secs="${7:-0}"
 
     # Firefox uses different flags:
     # --screenshot FILE (space, not =)
     # --window-size W = full page (Firefox auto-calculates height)
     # --window-size W,H = viewport only
+    local exit_code
     if [[ "$full_page" == true ]]; then
         # Width only = Firefox captures full scrollable page
-        "$browser_cmd" --headless --screenshot "$output" --window-size "${width}" "$url" 2>/dev/null
+        run_with_timeout "$timeout_secs" "$browser_cmd" --headless --screenshot "$output" --window-size "${width}" "$url" 2>/dev/null
+        exit_code=$?
     else
-        "$browser_cmd" --headless --screenshot "$output" --window-size "${width},${height}" "$url" 2>/dev/null
+        run_with_timeout "$timeout_secs" "$browser_cmd" --headless --screenshot "$output" --window-size "${width},${height}" "$url" 2>/dev/null
+        exit_code=$?
     fi
+
+    # Check if we timed out but still got a screenshot
+    if [[ "$exit_code" -eq 124 ]]; then
+        if [[ -f "$output" ]] && [[ -s "$output" ]]; then
+            [[ "$QUIET" != true ]] && echo "Page load timed out after ${timeout_secs}s, using partial capture" >&2
+            return 0
+        fi
+        [[ "$QUIET" != true ]] && echo "Page load timed out after ${timeout_secs}s" >&2
+        return 1
+    fi
+
+    return $exit_code
 }
 
 # Capture web page with Safari (macOS only, opens visible window)
@@ -1113,7 +1175,16 @@ capture_web() {
             capture_chromium "$browser_cmd" "$url" "$output" "$width" "$height" "$full_page"
             ;;
         firefox)
-            capture_firefox "$browser_cmd" "$url" "$output" "$width" "$height" "$full_page"
+            capture_firefox "$browser_cmd" "$url" "$output" "$width" "$height" "$full_page" "$WEB_TIMEOUT"
+            # Fallback to Chrome if Firefox fails (e.g., quarantine issues on macOS)
+            if [[ ! -f "$output" ]] || [[ ! -s "$output" ]]; then
+                local chrome_cmd
+                chrome_cmd=$(find_chrome)
+                if [[ -n "$chrome_cmd" ]]; then
+                    [[ "$QUIET" != true ]] && echo "Firefox failed, trying Chrome..." >&2
+                    capture_chromium "$chrome_cmd" "$url" "$output" "$width" "$height" "$full_page"
+                fi
+            fi
             ;;
         safari)
             capture_safari "$url" "$output" "$width" "$height" "$full_page"
