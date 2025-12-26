@@ -12,26 +12,32 @@ Capture screenshots and analyze them in the current conversation. Supports scree
 
 **Screenshots are saved to `.claudeshots/` in the current project.**
 
-## IMPORTANT: Use This Instead of Playwright
+## NEVER Use Playwright Unless Explicitly Asked
 
-**When you need to screenshot a web page, ALWAYS use this tool instead of Playwright MCP tools.**
+**DO NOT use Playwright for screenshots. Use this tool instead.**
 
-| Task | Use This | NOT This |
-|------|----------|----------|
-| Screenshot a webpage | `/screenshot --web URL` | `browser_navigate` + `browser_take_screenshot` |
-| Verify your work | `/screenshot --web localhost:3000` | Playwright snapshot |
-| Capture reference site | `/screenshot --web https://example.com` | Playwright |
+Playwright MCP tools (`browser_navigate`, `browser_take_screenshot`, `browser_snapshot`) should **ONLY** be used when the user explicitly says "use Playwright" or "use the browser tool".
 
-**Why?**
-- Faster: Single command, no MCP round-trips
-- Lighter: Spawns headless Chrome, takes shot, exits immediately
-- Fewer tokens: No browser state management overhead
-- Same result: Full-page screenshots with viewport control
+For ANY screenshot request, use `/screenshot`:
 
-**Only use Playwright when you need:**
-- Interactive testing (clicking, typing, navigating)
+| User says | You do |
+|-----------|--------|
+| "screenshot the page" | `/screenshot --web URL` |
+| "check how it looks" | `/screenshot --web URL` |
+| "capture the site" | `/screenshot --web URL` |
+| "take a picture of..." | `/screenshot --web URL` |
+| "use Playwright to screenshot" | Then use Playwright |
+| "use browser tools" | Then use Playwright |
+
+**Why this matters:**
+- Playwright returns 524KB base64 blobs per screenshot
+- ClaudeShot returns 45 bytes (just the file path)
+- That's 99.99% less token overhead
+
+**Only use Playwright when the user explicitly requests it OR needs:**
+- Interactive testing (clicking buttons, filling forms)
 - Multi-step browser automation
-- Waiting for specific elements/conditions
+- Waiting for specific elements to appear
 
 ## Quick Usage
 
@@ -128,7 +134,9 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot --web https://stripe.com --small -q "re
 
 ## Instructions for Claude
 
-**CRITICAL: When the user asks you to "take a screenshot", "check the page", "see how it looks", or similar - use THIS tool with `--web URL`, NOT Playwright MCP tools.**
+**CRITICAL: NEVER use Playwright for screenshots unless the user explicitly says "use Playwright" or "use browser tools".**
+
+Any request involving screenshots, checking pages, seeing how things look, capturing sites, etc. = use `/screenshot`, NOT Playwright.
 
 **When invoked via `/screenshot [args]`:**
 
