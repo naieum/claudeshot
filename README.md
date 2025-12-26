@@ -8,6 +8,7 @@ I built this because I kept wanting Claude to see what I was looking at - error 
 
 - **Screen capture** - grab a region, window, or your whole screen
 - **Web screenshots** - point it at any URL and get a full-page capture
+- **DOM capture** - save page HTML alongside screenshots for debugging
 - **Auto-resize** - shrink images to save tokens (a 217K screenshot becomes 11K)
 
 ## Example output
@@ -163,6 +164,16 @@ Check how your site looks on phone and tablet:
 
 "Looks good on tablet but the cards should be 2 columns, not 3."
 
+**Debugging with DOM capture**
+
+When you need both the visual and the markup:
+
+```
+/screenshot --web http://localhost:3000 --dom
+```
+
+This saves both `screenshot.png` and `screenshot.html`. Useful when Claude needs to see the CSS issue visually and check the DOM structure at the same time.
+
 ## All the flags
 
 ```
@@ -176,6 +187,7 @@ Check how your site looks on phone and tablet:
 --fullpage        capture full scrollable page (default)
 --web-viewport    just the visible viewport
 --browser NAME    use specific browser (chrome, firefox, edge, safari)
+--dom             capture page HTML alongside screenshot (web only)
 -d, --delay N     wait N seconds before capture
 -c, --clipboard   copy to clipboard too
 -t, --tmp         save to /tmp instead of .claudeshots

@@ -26,6 +26,7 @@
 #   --viewport WxH        Custom viewport (e.g., 375x667)
 #   --fullpage            Capture full scrollable page (default for --web)
 #   --browser BROWSER     Use specific browser: chrome, firefox, edge, safari
+#   --dom                 Capture page HTML/DOM alongside screenshot (web only)
 #   --clear               Clear all screenshots from current session (with confirmation)
 #   --clear-yes           Clear all session screenshots without confirmation
 #   --cleanup             Delete screenshots older than 1 hour
@@ -202,6 +203,7 @@ WEB_WIDTH=1280
 WEB_HEIGHT=800
 WEB_FULL_PAGE=true
 BROWSER_PREF=""  # User's browser preference: chrome, firefox, edge, safari
+CAPTURE_DOM=false  # Capture page HTML alongside screenshot
 
 # Load defaults from config file if it exists (safe parsing, no code execution)
 CONFIG_FILE=".claudeshot.conf"
@@ -353,6 +355,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --fullpage)
             WEB_FULL_PAGE=true
+            shift
+            ;;
+        --dom)
+            CAPTURE_DOM=true
             shift
             ;;
         --browser)
@@ -844,6 +850,35 @@ safari_available() {
     [[ "$OS" == "macos" ]] && [[ -d "/Applications/Safari.app" ]]
 }
 
+# Capture page DOM/HTML alongside screenshot
+capture_dom() {
+    local url="$1"
+    local output="$2"
+
+    local browser_cmd
+    browser_cmd=$(find_chrome 2>/dev/null) || browser_cmd=$(find_edge 2>/dev/null) || true
+
+    if [[ -n "$browser_cmd" ]]; then
+        # Chrome/Edge support --dump-dom for JS-rendered HTML
+        "$browser_cmd" --headless --disable-gpu --dump-dom "$url" 2>/dev/null > "$output"
+    else
+        # Fallback: raw HTML via curl (won't have JS-rendered content)
+        if command -v curl &>/dev/null; then
+            curl -sL "$url" > "$output" 2>/dev/null
+        else
+            echo "Warning: Could not capture DOM (no Chrome/Edge or curl available)" >&2
+            return 1
+        fi
+    fi
+
+    if [[ -f "$output" ]] && [[ -s "$output" ]]; then
+        return 0
+    else
+        rm -f "$output" 2>/dev/null
+        return 1
+    fi
+}
+
 
 # Capture web page with Chrome/Edge (Chromium-based)
 capture_chromium() {
@@ -1119,10 +1154,26 @@ show_all_browser_install_help() {
 }
 
 # Execute capture
+DOM_OUTPUT=""
 if [[ -n "$WEB_URL" ]]; then
     # Web screenshot mode
     capture_web "$WEB_URL" "$OUTPUT" "$WEB_WIDTH" "$WEB_HEIGHT" "$WEB_FULL_PAGE"
     CAPTURE_EXIT=$?
+
+    # Capture DOM alongside screenshot if requested
+    if [[ "$CAPTURE_DOM" == true ]] && [[ "$CAPTURE_EXIT" -eq 0 || -f "$OUTPUT" ]]; then
+        DOM_OUTPUT="${OUTPUT%.png}.html"
+        if [[ "$QUIET" != true ]]; then
+            echo "Capturing page DOM..." >&2
+        fi
+        if capture_dom "$WEB_URL" "$DOM_OUTPUT"; then
+            if [[ "$QUIET" != true ]]; then
+                echo "DOM saved: $DOM_OUTPUT" >&2
+            fi
+        else
+            DOM_OUTPUT=""
+        fi
+    fi
 else
     # Regular screenshot mode
     capture_screenshot "$MODE" "$OUTPUT"
@@ -1147,6 +1198,9 @@ if [[ -f "$OUTPUT" ]]; then
 
     # Log to session file for later cleanup (limit to 1000 entries)
     echo "$OUTPUT" >> "$SESSION_LOG"
+    if [[ -n "$DOM_OUTPUT" ]] && [[ -f "$DOM_OUTPUT" ]]; then
+        echo "$DOM_OUTPUT" >> "$SESSION_LOG"
+    fi
     if [[ -f "$SESSION_LOG" ]] && [[ $(wc -l < "$SESSION_LOG") -gt 1000 ]]; then
         tail -500 "$SESSION_LOG" > "$SESSION_LOG.tmp" && mv "$SESSION_LOG.tmp" "$SESSION_LOG"
     fi
@@ -1178,11 +1232,17 @@ if [[ -f "$OUTPUT" ]]; then
     # Output results
     if [[ "$QUIET" == true ]]; then
         echo "$OUTPUT"
+        if [[ -n "$DOM_OUTPUT" ]] && [[ -f "$DOM_OUTPUT" ]]; then
+            echo "$DOM_OUTPUT"
+        fi
         if [[ -n "$PROMPT" ]]; then
             echo "$PROMPT"
         fi
     else
         echo "Screenshot saved: $OUTPUT"
+        if [[ -n "$DOM_OUTPUT" ]] && [[ -f "$DOM_OUTPUT" ]]; then
+            echo "DOM saved: $DOM_OUTPUT"
+        fi
         if [[ -n "$PROMPT" ]]; then
             echo "Context: $PROMPT"
         fi
