@@ -90,7 +90,8 @@ Capture full-page screenshots of websites (great for reviewing your work):
 ## All Options
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/screenshot [OPTIONS] [PROMPT]
+# Script location (use CLAUDE_PLUGIN_ROOT if set, otherwise find relative to this command file)
+scripts/screenshot [OPTIONS] [PROMPT]
 ```
 
 | Flag | Description |
@@ -120,16 +121,16 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot [OPTIONS] [PROMPT]
 
 ```bash
 # Full screen, compressed for token efficiency
-${CLAUDE_PLUGIN_ROOT}/scripts/screenshot -m full --small -q
+scripts/screenshot -m full --small -q
 
 # Web screenshot of local dev server
-${CLAUDE_PLUGIN_ROOT}/scripts/screenshot --web http://localhost:3000 --small -q
+scripts/screenshot --web http://localhost:3000 --small -q
 
 # Capture with context
-${CLAUDE_PLUGIN_ROOT}/scripts/screenshot --web http://localhost:3000 -q "check if navbar matches design"
+scripts/screenshot --web http://localhost:3000 -q "check if navbar matches design"
 
 # Compare to reference site
-${CLAUDE_PLUGIN_ROOT}/scripts/screenshot --web https://stripe.com --small -q "reference design"
+scripts/screenshot --web https://stripe.com --small -q "reference design"
 ```
 
 ## Instructions for Claude
@@ -140,14 +141,18 @@ Any request involving screenshots, checking pages, seeing how things look, captu
 
 **When invoked via `/screenshot [args]`:**
 
+**Finding the script:** The screenshot script is located at `scripts/screenshot` relative to the plugin root directory. Use the directory containing this command file's parent as the root:
+- If `CLAUDE_PLUGIN_ROOT` is set: `${CLAUDE_PLUGIN_ROOT}/scripts/screenshot`
+- Otherwise, use the path relative to where you found `commands/screenshot.md`
+
 1. Parse arguments:
    - `--web URL` → Web screenshot mode (PREFERRED for web pages)
    - `--small` → Add resize flag
    - `--tiny` → Add resize flag
    - `--jpeg` → Save as JPEG (smaller files)
    - `--dom` → Capture HTML alongside screenshot (USE FOR BUG FIXING)
-   - `clear` → Run `${CLAUDE_PLUGIN_ROOT}/scripts/screenshot --clear`
-   - `list` → Run `${CLAUDE_PLUGIN_ROOT}/scripts/screenshot -l`
+   - `clear` → Run with `--clear` flag
+   - `list` → Run with `-l` flag
    - `window` → `-m window`
    - `full` → `-m full`
    - `-` → `-ht`
@@ -155,7 +160,7 @@ Any request involving screenshots, checking pages, seeing how things look, captu
 
 2. Run the command with `-q` for quiet output:
    ```bash
-   ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot [options] -q ["prompt"]
+   /path/to/plugin/scripts/screenshot [options] -q ["prompt"]
    ```
 
 3. Read output: Line 1 = path, Line 2 = prompt (if any)
@@ -167,7 +172,7 @@ Any request involving screenshots, checking pages, seeing how things look, captu
 **IMPORTANT - Bug Fixing Workflow:**
 When the user reports a bug or asks you to fix something visual, ALWAYS use `--dom`:
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/screenshot --web URL --dom -q
+scripts/screenshot --web URL --dom -q
 ```
 This captures both the screenshot AND the page HTML, so you can see the visual problem AND inspect the DOM structure to diagnose CSS/layout issues.
 
