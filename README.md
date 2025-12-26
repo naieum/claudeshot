@@ -210,6 +210,20 @@ Works on macOS, Linux, and Windows.
 
 Screenshots go to `.claudeshots/` in your current directory. Add it to `.gitignore` if you don't want them in version control.
 
+## Security
+
+I wanted to make sure this thing couldn't accidentally nuke your project or system, so there are a bunch of safeguards:
+
+- Can't write to system directories (`/etc`, `/usr`, `/bin`, etc.)
+- Can't overwrite your dotfiles (`~/.bashrc`, `~/.zshrc`, etc.)
+- Can't overwrite existing files outside `.claudeshots/` or `/tmp`
+- Won't follow symlinks (if `.claudeshots` is a symlink, it refuses to use it)
+- Only deletes actual `.png` files in the expected locations
+- Validates all inputs (URLs must be http/https, dimensions must be numbers, paths can't contain shell characters)
+- Session log is capped at 1000 entries so it can't fill your disk
+
+Basically, it can only write screenshots to `.claudeshots/` in your current directory or `/tmp`, and it can only delete files it created.
+
 ## License
 
 MIT
