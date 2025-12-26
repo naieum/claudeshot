@@ -1,3 +1,4 @@
 .claudeshots/
 .claudeshot.conf
 .DS_Store
+.playwright-mcp/
