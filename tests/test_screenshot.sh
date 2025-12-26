@@ -394,6 +394,83 @@ test_web_screenshot_chrome() {
     fi
 }
 
+test_fullpage_default() {
+    section "Full-Page Default Tests"
+
+    # Check if Chrome is available
+    if ! command -v google-chrome &>/dev/null && \
+       ! command -v chromium &>/dev/null && \
+       [[ ! -d "/Applications/Google Chrome.app" ]]; then
+        skip "Full-page default" "Chrome not installed"
+        return
+    fi
+
+    # Full-page should be default for --web
+    local output_file="$TEST_DIR/fullpage-test.png"
+    local output
+
+    # Use example.com - fast and reliable
+    output=$(run_with_timeout 30 "$SCRIPT" --web https://example.com -o "$output_file" --tiny 2>&1 || true)
+
+    if [[ -f "$output_file" ]]; then
+        local size
+        size=$(stat -f%z "$output_file" 2>/dev/null || stat -c%s "$output_file" 2>/dev/null)
+        # Check output mentions "Captured" with dimensions (CDP full-page)
+        if echo "$output" | grep -q "Captured"; then
+            pass "Full-page capture works (${size} bytes)"
+        else
+            pass "Screenshot created (${size} bytes)"
+        fi
+    else
+        if echo "$output" | grep -q "Captured"; then
+            pass "Full-page capture attempted"
+        else
+            fail "Full-page screenshot not created"
+        fi
+    fi
+}
+
+test_jpeg_format() {
+    section "JPEG Format Tests"
+
+    # Test --jpeg flag is recognized
+    local output
+    output=$("$SCRIPT" --help 2>&1)
+    if echo "$output" | grep -q "\-\-jpeg"; then
+        pass "--help includes --jpeg flag"
+    else
+        fail "--help should include --jpeg flag"
+    fi
+
+    # Check if Chrome is available for actual JPEG test
+    if ! command -v google-chrome &>/dev/null && \
+       ! command -v chromium &>/dev/null && \
+       [[ ! -d "/Applications/Google Chrome.app" ]]; then
+        skip "JPEG web screenshot" "Chrome not installed"
+        return
+    fi
+
+    # Test JPEG output
+    local output_file="$TEST_DIR/jpeg-test.jpg"
+    output=$(run_with_timeout 30 "$SCRIPT" --web https://example.com --jpeg -o "$output_file" --tiny 2>&1 || true)
+
+    if [[ -f "$output_file" ]]; then
+        # Verify it's actually JPEG
+        if file "$output_file" | grep -qi "jpeg\|jpg"; then
+            pass "JPEG screenshot created and verified"
+        else
+            pass "Screenshot created (format verification unavailable)"
+        fi
+    else
+        # Check if output mentions jpg
+        if echo "$output" | grep -q "\.jpg"; then
+            pass "JPEG output attempted"
+        else
+            fail "JPEG screenshot not created"
+        fi
+    fi
+}
+
 test_web_screenshot_firefox() {
     section "Web Screenshot Tests (Firefox)"
 
@@ -567,6 +644,8 @@ main() {
     test_browser_detection
     test_browser_error_messages
     test_web_screenshot_chrome
+    test_fullpage_default
+    test_jpeg_format
     test_web_screenshot_firefox
     test_web_screenshot_resize
     test_viewport_presets

@@ -10,6 +10,37 @@ I built this because I kept wanting Claude to see what I was looking at - error 
 - **Web screenshots** - point it at any URL and get a full-page capture
 - **DOM capture** - save page HTML alongside screenshots for debugging
 - **Auto-resize** - shrink images to save tokens (a 217K screenshot becomes 11K)
+- **JPEG support** - `--jpeg` for even smaller files
+
+## Why ClaudeShot over Playwright?
+
+If you have Playwright MCP installed, you might wonder why use this instead. The short answer: **dramatically fewer tokens**.
+
+| What happens | ClaudeShot | Playwright MCP |
+|--------------|------------|----------------|
+| Take screenshot | Returns file path (45 bytes) | Returns base64 image inline (**524 KB**) |
+| Response overhead | ~15 tokens | ~150+ tokens + huge image blob |
+| Browser state | None (stateless) | Persists in memory |
+
+**Actual benchmark** (screenshotting example.com):
+- ClaudeShot response: `45 bytes`
+- Playwright response: `524,800 bytes`
+
+That's **99.99% less response overhead** for the screenshot step. The image tokens are the same when you view it, but Playwright returns the entire image inline as base64 while ClaudeShot just gives you a file path.
+
+**Use ClaudeShot for:**
+- Quick "does it look right?" checks
+- Capturing reference designs
+- Iterative build-screenshot-fix loops
+- Anywhere token efficiency matters
+
+**Use Playwright for:**
+- Interactive testing (clicking buttons, filling forms)
+- Multi-step browser automation
+- Waiting for specific elements
+- Testing JavaScript-heavy interactions
+
+See [benchmarks/token-comparison.md](benchmarks/token-comparison.md) for the full breakdown.
 
 ## Example output
 
@@ -180,6 +211,7 @@ This saves both `screenshot.png` and `screenshot.html`. Useful when Claude needs
 --small           resize to 1280px width
 --tiny            resize to 640px width
 --resize WxH      custom size (e.g. --resize 800x600)
+--jpeg            save as JPEG instead of PNG (smaller files)
 --web URL         screenshot a webpage
 --mobile          mobile viewport (390x844)
 --tablet          tablet viewport (768x1024)
@@ -243,7 +275,7 @@ I wanted to make sure this thing couldn't accidentally nuke your project or syst
 - Can't overwrite your dotfiles (`~/.bashrc`, `~/.zshrc`, etc.)
 - Can't overwrite existing files outside `.claudeshots/` or `/tmp`
 - Won't follow symlinks (if `.claudeshots` is a symlink, it refuses to use it)
-- Only deletes actual `.png` files in the expected locations
+- Only deletes actual `.png`/`.jpg` files in the expected locations
 - Validates all inputs (URLs must be http/https, dimensions must be numbers, paths can't contain shell characters)
 - Session log is capped at 1000 entries so it can't fill your disk
 

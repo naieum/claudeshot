@@ -16,6 +16,7 @@
 #   --small               Resize to 1280px width (saves tokens)
 #   --tiny                Resize to 640px width (max token savings)
 #   --resize WxH          Resize to specific dimensions (e.g., 800x600)
+#   --jpeg                Save as JPEG instead of PNG (smaller files)
 #   --web URL             Full-page screenshot of a webpage
 #   --web-width PX        Browser width for web screenshots (default: 1280)
 #   --web-height PX       Browser viewport height (default: 800)
@@ -41,6 +42,7 @@
 #   screenshot -m full -ht               # Full screen, hide terminal
 #   screenshot -m full --small           # Full screen, resized for fewer tokens
 #   screenshot --tiny                    # Selection, max compression
+#   screenshot --jpeg                    # Save as JPEG (smaller file size)
 #   screenshot --web http://localhost:3000              # Full-page web screenshot
 #   screenshot --web http://localhost:3000 --mobile     # Mobile viewport
 #   screenshot --web http://localhost:3000 --tablet     # Tablet viewport
@@ -94,7 +96,7 @@ check_safe_directory() {
     fi
 }
 
-# Security: check file is safe to delete (is a real file, not a symlink, and is a PNG)
+# Security: check file is safe to delete (is a real file, not a symlink, and is a screenshot)
 safe_to_delete() {
     local file="$1"
     # Must exist
@@ -103,13 +105,13 @@ safe_to_delete() {
     [[ -L "$file" ]] && return 1
     # Must be a regular file
     [[ -f "$file" ]] || return 1
-    # Must end in .png
-    [[ "$file" == *.png ]] || return 1
+    # Must end in .png or .jpg
+    [[ "$file" == *.png || "$file" == *.jpg ]] || return 1
     # Must be in allowed locations
     case "$file" in
-        .claudeshots/*.png) return 0 ;;
-        /tmp/claude-screenshot-*.png) return 0 ;;
-        "$TEMP_DIR"/claude-screenshot-*.png) return 0 ;;
+        .claudeshots/*.png|.claudeshots/*.jpg) return 0 ;;
+        /tmp/claude-screenshot-*.png|/tmp/claude-screenshot-*.jpg) return 0 ;;
+        "$TEMP_DIR"/claude-screenshot-*.png|"$TEMP_DIR"/claude-screenshot-*.jpg) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -204,6 +206,7 @@ WEB_HEIGHT=800
 WEB_FULL_PAGE=true
 BROWSER_PREF=""  # User's browser preference: chrome, firefox, edge, safari
 CAPTURE_DOM=false  # Capture page HTML alongside screenshot
+FORMAT="png"  # Output format: png or jpeg
 
 # Load defaults from config file if it exists (safe parsing, no code execution)
 CONFIG_FILE=".claudeshot.conf"
@@ -361,6 +364,10 @@ while [[ $# -gt 0 ]]; do
             CAPTURE_DOM=true
             shift
             ;;
+        --jpeg)
+            FORMAT="jpeg"
+            shift
+            ;;
         --browser)
             case "$2" in
                 chrome|firefox|edge|safari)
@@ -385,13 +392,13 @@ while [[ $# -gt 0 ]]; do
         -l|--list)
             echo "Project screenshots (.claudeshots/):"
             if [[ -d "$SCREENSHOT_DIR" ]]; then
-                ls -lt "$SCREENSHOT_DIR"/*.png 2>/dev/null | head -10 | awk '{print "  " $NF " (" $6, $7, $8 ")"}' || echo "  (none yet)"
+                ls -lt "$SCREENSHOT_DIR"/*.png "$SCREENSHOT_DIR"/*.jpg 2>/dev/null | head -10 | awk '{print "  " $NF " (" $6, $7, $8 ")"}' || echo "  (none yet)"
             else
                 echo "  (none yet)"
             fi
             echo ""
             echo "Temp screenshots:"
-            ls -lt "$TEMP_DIR"/claude-screenshot-*.png 2>/dev/null | head -5 | awk '{print "  " $NF " (" $6, $7, $8 ")"}' || echo "  (none)"
+            ls -lt "$TEMP_DIR"/claude-screenshot-*.png "$TEMP_DIR"/claude-screenshot-*.jpg 2>/dev/null | head -5 | awk '{print "  " $NF " (" $6, $7, $8 ")"}' || echo "  (none)"
             if [[ -f "$SESSION_LOG" ]]; then
                 echo ""
                 echo "Session screenshots ($(wc -l < "$SESSION_LOG" | tr -d ' ') files):"
@@ -460,8 +467,8 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         --cleanup)
-            COUNT=$(find "$TEMP_DIR" -name "claude-screenshot-*.png" -mmin +60 2>/dev/null | wc -l | tr -d ' ')
-            find "$TEMP_DIR" -name "claude-screenshot-*.png" -mmin +60 -delete 2>/dev/null || true
+            COUNT=$(find "$TEMP_DIR" \( -name "claude-screenshot-*.png" -o -name "claude-screenshot-*.jpg" \) -mmin +60 2>/dev/null | wc -l | tr -d ' ')
+            find "$TEMP_DIR" \( -name "claude-screenshot-*.png" -o -name "claude-screenshot-*.jpg" \) -mmin +60 -delete 2>/dev/null || true
             echo "Cleaned up $COUNT old screenshots"
             exit 0
             ;;
@@ -481,25 +488,44 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Check JPEG support on Linux/WSL - graceful fallback
+if [[ "$FORMAT" == "jpeg" ]] && [[ "$OS" == "linux" || "$OS" == "wsl" ]]; then
+    # Linux screenshot tools output PNG, need ImageMagick to convert
+    if ! command -v convert &>/dev/null && ! command -v magick &>/dev/null; then
+        if [[ "$QUIET" != true ]]; then
+            echo "Note: ImageMagick not found. Saving as PNG instead." >&2
+            echo "Install with: sudo apt install imagemagick" >&2
+        fi
+        FORMAT="png"
+    fi
+fi
+
+# Determine file extension based on format
+if [[ "$FORMAT" == "jpeg" ]]; then
+    EXT="jpg"
+else
+    EXT="png"
+fi
+
 # Generate output path if not specified
 if [[ -z "$OUTPUT" ]]; then
     if [[ "$USE_TMP" == true ]]; then
-        OUTPUT="$TEMP_DIR/claude-screenshot-$(date +%s).png"
+        OUTPUT="$TEMP_DIR/claude-screenshot-$(date +%s).$EXT"
         SESSION_LOG="$TEMP_DIR/claude-screenshot-session.log"
     else
         # Security: check if .claudeshots is a symlink
         if [[ -L "$SCREENSHOT_DIR" ]]; then
             echo "Error: $SCREENSHOT_DIR is a symlink. Refusing to use for safety." >&2
-            OUTPUT="$TEMP_DIR/claude-screenshot-$(date +%s).png"
+            OUTPUT="$TEMP_DIR/claude-screenshot-$(date +%s).$EXT"
             SESSION_LOG="$TEMP_DIR/claude-screenshot-session.log"
         else
             mkdir -p "$SCREENSHOT_DIR" 2>/dev/null
         fi
         if [[ -d "$SCREENSHOT_DIR" ]] && [[ ! -L "$SCREENSHOT_DIR" ]]; then
-            OUTPUT="${SCREENSHOT_DIR}/screenshot-$(date +%Y%m%d-%H%M%S).png"
+            OUTPUT="${SCREENSHOT_DIR}/screenshot-$(date +%Y%m%d-%H%M%S).$EXT"
             SESSION_LOG="${SCREENSHOT_DIR}/.session.log"
         else
-            OUTPUT="$TEMP_DIR/claude-screenshot-$(date +%s).png"
+            OUTPUT="$TEMP_DIR/claude-screenshot-$(date +%s).$EXT"
             SESSION_LOG="$TEMP_DIR/claude-screenshot-session.log"
             if [[ "$QUIET" != true ]]; then
                 echo "Note: Saving to $TEMP_DIR (couldn't create .claudeshots/ here)" >&2
@@ -552,11 +578,17 @@ capture_screenshot() {
 capture_macos() {
     local mode="$1"
     local output="$2"
+    local format_flag=""
+
+    # Use -t flag for format (jpg for jpeg, png for png)
+    if [[ "$FORMAT" == "jpeg" ]]; then
+        format_flag="-t jpg"
+    fi
 
     case "$mode" in
-        selection)  screencapture -i "$output" 2>/dev/null ;;
-        window)     screencapture -i -w "$output" 2>/dev/null ;;
-        full)       screencapture "$output" 2>/dev/null ;;
+        selection)  screencapture -i $format_flag "$output" 2>/dev/null ;;
+        window)     screencapture -i -w $format_flag "$output" 2>/dev/null ;;
+        full)       screencapture $format_flag "$output" 2>/dev/null ;;
         *)
             echo "Unknown mode: $mode (use: selection, window, full)" >&2
             return 1
@@ -889,6 +921,29 @@ capture_chromium() {
     local height="$5"
     local full_page="$6"
 
+    # For full-page: use CDP (Chrome DevTools Protocol) to get actual page height
+    if [[ "$full_page" == true ]]; then
+        local cdp_script="${BASH_SOURCE[0]%/*}/cdp-screenshot.py"
+        local python_cmd=""
+        if command -v python3 &>/dev/null; then
+            python_cmd="python3"
+        elif command -v python &>/dev/null; then
+            python_cmd="python"
+        fi
+        if [[ -f "$cdp_script" ]] && [[ -n "$python_cmd" ]]; then
+            local fmt="png"
+            [[ "$FORMAT" == "jpeg" ]] && fmt="jpg"
+            if "$python_cmd" "$cdp_script" "$url" "$output" "$width" "$fmt" 2>&1; then
+                return 0
+            fi
+            # CDP failed, fall through to viewport capture
+            if [[ "$QUIET" != true ]]; then
+                echo "CDP capture failed, using viewport capture..." >&2
+            fi
+        fi
+    fi
+
+    # Standard viewport capture (or fallback if CDP fails)
     local args=(
         --headless
         --disable-gpu
@@ -917,8 +972,14 @@ capture_firefox() {
 
     # Firefox uses different flags:
     # --screenshot FILE (space, not =)
-    # --window-size W,H (comma-separated)
-    "$browser_cmd" --headless --screenshot "$output" --window-size "${width},${height}" "$url" 2>/dev/null
+    # --window-size W = full page (Firefox auto-calculates height)
+    # --window-size W,H = viewport only
+    if [[ "$full_page" == true ]]; then
+        # Width only = Firefox captures full scrollable page
+        "$browser_cmd" --headless --screenshot "$output" --window-size "${width}" "$url" 2>/dev/null
+    else
+        "$browser_cmd" --headless --screenshot "$output" --window-size "${width},${height}" "$url" 2>/dev/null
+    fi
 }
 
 # Capture web page with Safari (macOS only, opens visible window)
@@ -1008,15 +1069,31 @@ capture_web() {
             return 1
         fi
     else
-        # Auto-detect: Chrome > Firefox > Edge > Safari
-        if browser_cmd=$(find_chrome 2>/dev/null); then
-            browser_type="chrome"
-        elif browser_cmd=$(find_firefox 2>/dev/null); then
-            browser_type="firefox"
-        elif browser_cmd=$(find_edge 2>/dev/null); then
-            browser_type="edge"
-        elif safari_available; then
-            browser_type="safari"
+        # Auto-detect browser
+        # For full-page: prefer Firefox (native support) > Chrome (CDP) > Edge > Safari
+        # For viewport: Chrome > Firefox > Edge > Safari
+        if [[ "$full_page" == true ]]; then
+            # Firefox has native full-page support (no CDP needed)
+            if browser_cmd=$(find_firefox 2>/dev/null); then
+                browser_type="firefox"
+            elif browser_cmd=$(find_chrome 2>/dev/null); then
+                browser_type="chrome"
+            elif browser_cmd=$(find_edge 2>/dev/null); then
+                browser_type="edge"
+            elif safari_available; then
+                browser_type="safari"
+            fi
+        else
+            # Viewport only: Chrome > Firefox > Edge > Safari
+            if browser_cmd=$(find_chrome 2>/dev/null); then
+                browser_type="chrome"
+            elif browser_cmd=$(find_firefox 2>/dev/null); then
+                browser_type="firefox"
+            elif browser_cmd=$(find_edge 2>/dev/null); then
+                browser_type="edge"
+            elif safari_available; then
+                browser_type="safari"
+            fi
         fi
     fi
 
@@ -1162,7 +1239,7 @@ if [[ -n "$WEB_URL" ]]; then
 
     # Capture DOM alongside screenshot if requested
     if [[ "$CAPTURE_DOM" == true ]] && [[ "$CAPTURE_EXIT" -eq 0 || -f "$OUTPUT" ]]; then
-        DOM_OUTPUT="${OUTPUT%.png}.html"
+        DOM_OUTPUT="${OUTPUT%.*}.html"
         if [[ "$QUIET" != true ]]; then
             echo "Capturing page DOM..." >&2
         fi
@@ -1176,8 +1253,23 @@ if [[ -n "$WEB_URL" ]]; then
     fi
 else
     # Regular screenshot mode
-    capture_screenshot "$MODE" "$OUTPUT"
-    CAPTURE_EXIT=$?
+    # For Linux/WSL with JPEG: capture to temp PNG, then convert
+    if [[ "$FORMAT" == "jpeg" ]] && [[ "$OS" == "linux" || "$OS" == "wsl" ]]; then
+        TEMP_PNG="${OUTPUT%.jpg}.tmp.png"
+        capture_screenshot "$MODE" "$TEMP_PNG"
+        CAPTURE_EXIT=$?
+        # Convert temp PNG to JPEG if capture succeeded
+        if [[ -f "$TEMP_PNG" ]]; then
+            if command -v convert &>/dev/null; then
+                convert "$TEMP_PNG" -quality 85 "$OUTPUT" && rm -f "$TEMP_PNG"
+            elif command -v magick &>/dev/null; then
+                magick "$TEMP_PNG" -quality 85 "$OUTPUT" && rm -f "$TEMP_PNG"
+            fi
+        fi
+    else
+        capture_screenshot "$MODE" "$OUTPUT"
+        CAPTURE_EXIT=$?
+    fi
 fi
 
 # Restore terminal if it was hidden (macOS)

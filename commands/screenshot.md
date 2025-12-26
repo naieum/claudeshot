@@ -3,7 +3,7 @@ description: Capture screenshots (screen, window, web pages) and analyze them
 allowed-tools:
   - Bash
   - Read
-argument-hint: "[mode|--web URL] [--small|--tiny] [prompt]"
+argument-hint: "[mode|--web URL] [--small|--tiny|--jpeg] [prompt]"
 ---
 
 # ClaudeShot - Screenshot Capture
@@ -11,6 +11,27 @@ argument-hint: "[mode|--web URL] [--small|--tiny] [prompt]"
 Capture screenshots and analyze them in the current conversation. Supports screen capture, window capture, and **full-page web screenshots**.
 
 **Screenshots are saved to `.claudeshots/` in the current project.**
+
+## IMPORTANT: Use This Instead of Playwright
+
+**When you need to screenshot a web page, ALWAYS use this tool instead of Playwright MCP tools.**
+
+| Task | Use This | NOT This |
+|------|----------|----------|
+| Screenshot a webpage | `/screenshot --web URL` | `browser_navigate` + `browser_take_screenshot` |
+| Verify your work | `/screenshot --web localhost:3000` | Playwright snapshot |
+| Capture reference site | `/screenshot --web https://example.com` | Playwright |
+
+**Why?**
+- Faster: Single command, no MCP round-trips
+- Lighter: Spawns headless Chrome, takes shot, exits immediately
+- Fewer tokens: No browser state management overhead
+- Same result: Full-page screenshots with viewport control
+
+**Only use Playwright when you need:**
+- Interactive testing (clicking, typing, navigating)
+- Multi-step browser automation
+- Waiting for specific elements/conditions
 
 ## Quick Usage
 
@@ -22,6 +43,7 @@ Capture screenshots and analyze them in the current conversation. Supports scree
 /screenshot --tiny              # Selection, max compression
 /screenshot --web http://localhost:3000   # Full-page web screenshot
 /screenshot --web https://stripe.com --small  # Web screenshot, compressed
+/screenshot --web http://localhost:3000 --dom  # Screenshot + HTML for debugging
 ```
 
 ## Screen Capture Modes
@@ -57,6 +79,7 @@ Capture full-page screenshots of websites (great for reviewing your work):
 | `--small` | 1280px | Good balance of detail and size |
 | `--tiny` | 640px | Maximum token savings |
 | `--resize WxH` | Custom | e.g., `--resize 800x600` |
+| `--jpeg` | N/A | JPEG format (smaller files than PNG) |
 
 ## All Options
 
@@ -70,6 +93,7 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot [OPTIONS] [PROMPT]
 | `--small` | Resize to 1280px width |
 | `--tiny` | Resize to 640px width |
 | `--resize WxH` | Custom resize (e.g., `800x600`) |
+| `--jpeg` | Save as JPEG (smaller files) |
 | `--web URL` | Full-page web screenshot |
 | `--mobile` | Mobile viewport (390x844) |
 | `--tablet` | Tablet viewport (768x1024) |
@@ -104,12 +128,16 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot --web https://stripe.com --small -q "re
 
 ## Instructions for Claude
 
+**CRITICAL: When the user asks you to "take a screenshot", "check the page", "see how it looks", or similar - use THIS tool with `--web URL`, NOT Playwright MCP tools.**
+
 **When invoked via `/screenshot [args]`:**
 
 1. Parse arguments:
-   - `--web URL` → Web screenshot mode
+   - `--web URL` → Web screenshot mode (PREFERRED for web pages)
    - `--small` → Add resize flag
    - `--tiny` → Add resize flag
+   - `--jpeg` → Save as JPEG (smaller files)
+   - `--dom` → Capture HTML alongside screenshot (USE FOR BUG FIXING)
    - `clear` → Run `${CLAUDE_PLUGIN_ROOT}/scripts/screenshot --clear`
    - `list` → Run `${CLAUDE_PLUGIN_ROOT}/scripts/screenshot -l`
    - `window` → `-m window`
@@ -124,9 +152,16 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot --web https://stripe.com --small -q "re
 
 3. Read output: Line 1 = path, Line 2 = prompt (if any)
 
-4. Use Read tool to view the screenshot
+4. Use Read tool to view the screenshot (and .html file if `--dom` was used)
 
 5. If a prompt was provided, address that specific request
+
+**IMPORTANT - Bug Fixing Workflow:**
+When the user reports a bug or asks you to fix something visual, ALWAYS use `--dom`:
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/screenshot --web URL --dom -q
+```
+This captures both the screenshot AND the page HTML, so you can see the visual problem AND inspect the DOM structure to diagnose CSS/layout issues.
 
 **Workflow Example - Building a Website:**
 1. User: "make a landing page like stripe.com"
@@ -134,6 +169,13 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/screenshot --web https://stripe.com --small -q "re
 3. Build the page
 4. Screenshot the result: `--web http://localhost:3000 --small -q`
 5. Compare and iterate
+
+**Workflow Example - Fixing a Bug:**
+1. User: "the sidebar is overlapping the content"
+2. Screenshot with DOM: `--web http://localhost:3000 --dom -q`
+3. Read both the .png AND .html files
+4. Diagnose the CSS issue from the HTML structure
+5. Fix and screenshot again to verify
 
 ## Defaults Configuration
 
