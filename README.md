@@ -251,16 +251,22 @@ Works on macOS, Linux, and Windows.
 - Windows uses PowerShell or Snipping Tool
 
 Web screenshots support multiple browsers:
-- Chrome/Chromium (default, best full-page support)
-- Firefox (native `--screenshot` support)
+- **Firefox** (preferred for full-page - native support, no dependencies)
+- Chrome/Chromium (full-page via CDP, requires Python)
 - Edge (same as Chrome, Chromium-based)
-- Safari (macOS only, limited - see note below)
+- Safari (macOS only, viewport only - see note below)
 
-**Safari note:** Apple never added headless screenshot support to Safari. Unlike every other browser, Safari has no `--headless --screenshot` option. We work around this with AppleScript, but it opens a visible Safari window briefly and can only capture the viewport (no full-page scroll capture). For headless screenshots, use Chrome or Firefox.
+**How full-page works:**
+- Firefox: Native CLI support (just pass width, auto-calculates height)
+- Chrome/Edge: Uses Chrome DevTools Protocol via our stdlib-only Python script
+- Safari: No headless support, viewport capture only
 
-Auto-detects installed browsers. Use `--browser` to pick one:
+**Safari note:** Apple never added headless screenshot support to Safari. We work around this with AppleScript, but it opens a visible Safari window briefly and can only capture the viewport.
+
+Auto-detects browsers. For full-page, prefers Firefox > Chrome > Edge:
 ```
-/screenshot --web https://example.com --browser firefox
+/screenshot --web https://example.com              # auto-detect
+/screenshot --web https://example.com --browser firefox  # force Firefox
 ```
 
 ## Files
