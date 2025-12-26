@@ -30,50 +30,6 @@ Think of it like showing a designer a reference site - you'll get something *ins
 
 For better results: use `--dom` to capture HTML alongside the screenshot. This gives Claude both the visual and the structure to work with.
 
-## Why ClaudeShot over Playwright?
-
-If you have Playwright MCP installed, you might wonder why use this instead. The short answer: **dramatically fewer tokens**.
-
-| What happens | ClaudeShot | Playwright MCP |
-|--------------|------------|----------------|
-| Take screenshot | Returns file path (45 bytes) | Returns base64 image inline (**524 KB**) |
-| Response overhead | ~15 tokens | ~150+ tokens + huge image blob |
-| Browser state | None (stateless) | Persists in memory |
-
-**Actual benchmark** (screenshotting example.com):
-- ClaudeShot response: `45 bytes`
-- Playwright response: `524,800 bytes`
-
-That's **99.99% less response overhead** for the screenshot step. The image tokens are the same when you view it, but Playwright returns the entire image inline as base64 while ClaudeShot just gives you a file path.
-
-**Use ClaudeShot for:**
-- Quick "does it look right?" checks
-- Capturing reference designs
-- Iterative build-screenshot-fix loops
-- Anywhere token efficiency matters
-
-**Use Playwright for:**
-- Interactive testing (clicking buttons, filling forms)
-- Multi-step browser automation
-- Waiting for specific elements
-- Testing JavaScript-heavy interactions
-
-See [benchmarks/token-comparison.md](benchmarks/token-comparison.md) for the full breakdown.
-
-## Example output
-
-Desktop (1280px):
-
-![Desktop](examples/desktop.png)
-
-Mobile (390px):
-
-![Mobile](examples/mobile.png)
-
-Tablet (768px):
-
-![Tablet](examples/tablet.png)
-
 ## Install
 
 From Claude Code:
@@ -115,6 +71,106 @@ To save tokens, add `--small` (1280px) or `--tiny` (640px):
 ```
 
 The `--tiny` flag cuts file size by about 95%. Still readable, way fewer tokens.
+
+## All the flags
+
+```
+--small           resize to 1280px width
+--tiny            resize to 640px width
+--resize WxH      custom size (e.g. --resize 800x600)
+--jpeg            save as JPEG instead of PNG (smaller files)
+--web URL         screenshot a webpage
+--mobile          mobile viewport (390x844)
+--tablet          tablet viewport (768x1024)
+--viewport WxH    custom viewport (e.g., 375x667)
+--fullpage        capture full scrollable page (default)
+--web-viewport    just the visible viewport
+--browser NAME    use specific browser (chrome, firefox, edge, safari)
+--dom             capture page HTML alongside screenshot (web only)
+-d, --delay N     wait N seconds before capture
+-c, --clipboard   copy to clipboard too
+-t, --tmp         save to /tmp instead of .claudeshots
+```
+
+Management:
+
+```
+/screenshot list    # show recent screenshots
+/screenshot clear   # delete session screenshots
+/screenshot open    # open the folder
+```
+
+## Platform support
+
+Works on macOS, Linux, and Windows.
+
+- macOS uses the built-in `screencapture`
+- Linux uses whatever you have installed (gnome-screenshot, scrot, maim, etc.)
+- Windows uses PowerShell or Snipping Tool
+
+Web screenshots support multiple browsers:
+- **Firefox** (preferred for full-page - native support, no dependencies)
+- Chrome/Chromium (full-page via CDP, requires Python)
+- Edge (same as Chrome, Chromium-based)
+- Safari (macOS only, viewport only - see note below)
+
+**How full-page works:**
+- Firefox: Native CLI support (just pass width, auto-calculates height)
+- Chrome/Edge: Uses Chrome DevTools Protocol via our stdlib-only Python script
+- Safari: No headless support, viewport capture only
+
+**Safari note:** Apple never added headless screenshot support to Safari. We work around this with AppleScript, but it opens a visible Safari window briefly and can only capture the viewport.
+
+Auto-detects browsers. For full-page, prefers Firefox > Chrome > Edge:
+```
+/screenshot --web https://example.com              # auto-detect
+/screenshot --web https://example.com --browser firefox  # force Firefox
+```
+
+## Configuration
+
+If you want defaults, create `.claudeshot.conf` in your project:
+
+```bash
+RESIZE="1280"
+WEB_WIDTH=1440
+```
+
+## Files
+
+Screenshots go to `.claudeshots/` in your current directory. Add it to `.gitignore` if you don't want them in version control.
+
+---
+
+## Why ClaudeShot over Playwright?
+
+If you have Playwright MCP installed, you might wonder why use this instead. The short answer: **dramatically fewer tokens**.
+
+| What happens | ClaudeShot | Playwright MCP |
+|--------------|------------|----------------|
+| Take screenshot | Returns file path (45 bytes) | Returns base64 image inline (**524 KB**) |
+| Response overhead | ~15 tokens | ~150+ tokens + huge image blob |
+| Browser state | None (stateless) | Persists in memory |
+
+**Actual benchmark** (screenshotting example.com):
+- ClaudeShot response: `45 bytes`
+- Playwright response: `524,800 bytes`
+
+That's **99.99% less response overhead** for the screenshot step. The image tokens are the same when you view it, but Playwright returns the entire image inline as base64 while ClaudeShot just gives you a file path.
+
+**Use ClaudeShot for:**
+- Quick "does it look right?" checks
+- Capturing reference designs
+- Iterative build-screenshot-fix loops
+- Anywhere token efficiency matters
+
+**Use Playwright for:**
+- Interactive testing (clicking buttons, filling forms)
+- Multi-step browser automation
+- Waiting for specific elements
+- Testing JavaScript-heavy interactions
+
+See [benchmarks/token-comparison.md](benchmarks/token-comparison.md) for the full breakdown.
 
 ## Examples
 
@@ -223,73 +279,19 @@ When you need both the visual and the markup:
 
 This saves both `screenshot.png` and `screenshot.html`. Useful when Claude needs to see the CSS issue visually and check the DOM structure at the same time.
 
-## All the flags
+## Example output
 
-```
---small           resize to 1280px width
---tiny            resize to 640px width
---resize WxH      custom size (e.g. --resize 800x600)
---jpeg            save as JPEG instead of PNG (smaller files)
---web URL         screenshot a webpage
---mobile          mobile viewport (390x844)
---tablet          tablet viewport (768x1024)
---viewport WxH    custom viewport (e.g., 375x667)
---fullpage        capture full scrollable page (default)
---web-viewport    just the visible viewport
---browser NAME    use specific browser (chrome, firefox, edge, safari)
---dom             capture page HTML alongside screenshot (web only)
--d, --delay N     wait N seconds before capture
--c, --clipboard   copy to clipboard too
--t, --tmp         save to /tmp instead of .claudeshots
-```
+Desktop (1280px):
 
-Management:
+![Desktop](examples/desktop.png)
 
-```
-/screenshot list    # show recent screenshots
-/screenshot clear   # delete session screenshots
-/screenshot open    # open the folder
-```
+Mobile (390px):
 
-## Configuration
+![Mobile](examples/mobile.png)
 
-If you want defaults, create `.claudeshot.conf` in your project:
+Tablet (768px):
 
-```bash
-RESIZE="1280"
-WEB_WIDTH=1440
-```
-
-## Platform support
-
-Works on macOS, Linux, and Windows.
-
-- macOS uses the built-in `screencapture`
-- Linux uses whatever you have installed (gnome-screenshot, scrot, maim, etc.)
-- Windows uses PowerShell or Snipping Tool
-
-Web screenshots support multiple browsers:
-- **Firefox** (preferred for full-page - native support, no dependencies)
-- Chrome/Chromium (full-page via CDP, requires Python)
-- Edge (same as Chrome, Chromium-based)
-- Safari (macOS only, viewport only - see note below)
-
-**How full-page works:**
-- Firefox: Native CLI support (just pass width, auto-calculates height)
-- Chrome/Edge: Uses Chrome DevTools Protocol via our stdlib-only Python script
-- Safari: No headless support, viewport capture only
-
-**Safari note:** Apple never added headless screenshot support to Safari. We work around this with AppleScript, but it opens a visible Safari window briefly and can only capture the viewport.
-
-Auto-detects browsers. For full-page, prefers Firefox > Chrome > Edge:
-```
-/screenshot --web https://example.com              # auto-detect
-/screenshot --web https://example.com --browser firefox  # force Firefox
-```
-
-## Files
-
-Screenshots go to `.claudeshots/` in your current directory. Add it to `.gitignore` if you don't want them in version control.
+![Tablet](examples/tablet.png)
 
 ## Security
 
